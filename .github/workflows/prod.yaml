@@ -1,0 +1,163 @@
+# Este workflow se ejecuta en cada push a la rama 'main',
+# lo que indica que se ha fusionado un cambio listo para producción.
+name: Production
+
+# Este workflow se ejecuta de forma concurrente en la rama `main`,
+# cancelando cualquier ejecución en progreso si se activa
+# una nueva ejecución para la misma rama.
+concurrency:
+    group: main-$-$
+    cancel-in-progress: true
+
+# El workflow se activa en los push a la rama `main`.
+on:
+    push:
+        branches:
+            - main
+
+# Definición de los trabajos del workflow.
+jobs:
+    # Este job se encarga de validar la semántica del commit y PR
+    # con el workflow de semantic pull request de Very Good Workflows.
+    semantic-pull-request:
+        name: "📝 Semantic"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
+        permissions:
+            contents: read
+
+    # Este job se encarga de realizar una revisión ortográfica en los
+    # archivos Markdown del proyecto.
+    spell-check:
+        name: "🔍 Spell Check"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
+        with:
+            includes: |
+                **/*.md
+            modified_files_only: false
+
+    # Este job se encarga de verificar la calidad del código,
+    # incluyendo formato, análisis estático, pruebas y cobertura.
+    quality:
+        name: "💯 Verify Quality Gates"
+        needs: [semantic-pull-request, spell-check] # Este job depende de los jobs de validación semántica y revisión ortográfica.
+        runs-on: ubuntu-latest # El job se ejecuta en un runner con Ubuntu.
+        permissions:
+            contents: read
+        # Estos son los pasos que se ejecutan en el job de calidad:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+            
+            # Este paso configura Flutter en el runner utilizando la acción de subosito/flutter-action.
+            -   name: 🐦 Setup Flutter
+                uses: subosito/flutter-action@v2
+                with:
+                    channel: "stable"
+            
+            # Este paso instala las dependencias del proyecto utilizando Flutter.
+            -   name: 📦 Install Dependencies
+                run: |
+                    flutter pub get
+            
+            # Este paso verifica el formato del código.
+            -   name: ✨ Format Check
+                run: |
+                    dart format --set-exit-if-changed .
+            
+            # Este paso realiza un análisis estático del código utilizando Flutter Analyze.
+            -   name: 🧐 Analyze
+                run: |
+                    flutter analyze
+            
+            # Este paso ejecuta las pruebas del proyecto y genera un reporte de cobertura.
+            -   name: 🧪 Run Tests
+                run: |
+                    flutter test --coverage
+            
+            # Este paso verifica que la cobertura de código cumpla con un umbral mínimo
+            # (80% en este caso) utilizando la acción de Very Good Coverage.
+            -   name: ✅ Check Coverage
+                uses: VeryGoodOpenSource/very_good_coverage@v3
+                with:
+                    path: coverage/lcov.info
+                    min_coverage: 80
+            
+            # Este paso sube el reporte de cobertura a Codecov para su visualización y seguimiento.
+            -   name: 📊 Codecov Badge
+                uses: codecov/codecov-action@v5
+                with:
+                    token: ${{ secrets.CODECOV_TOKEN }}
+
+    # Este job se encarga de promover la aplicación Android a producción en Google Play
+    # utilizando la acción de kevin-david/promote-play-release.
+    promote-android:
+        name: "📈 Promote Android to Production"
+        needs: quality # Este job depende del job de calidad, asegurando que solo se promueva a producción si se pasan las verificaciones de calidad.
+        runs-on: ubuntu-latest
+        # Las siguientes variables de entorno se utilizan para configurar la promoción a producción:
+        env:
+            APP_PACKAGE_NAME: com.example.com # Reemplaza con el nombre del paquete de tu aplicación Android.
+            SERVICE_ACCOUNT_PATH: service-account.json # Ruta temporal para almacenar el archivo de cuenta de servicio decodificado.
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+            
+            # Este paso decodifica el archivo de cuenta de servicio de Google Play
+            # desde un secreto de GitHub y lo guarda en una ruta temporal en el runner.
+            -   name: 🔑 Decode Service Account
+                run: echo "${{ secrets.ANDROID_RELEASE_SERVICE_ACCOUNT }}" | base64 --decode > ${{ env.SERVICE_ACCOUNT_PATH }}
+            
+            # Este paso promueve la aplicación Android a producción utilizando
+            # la acción de kevin-david/promote-play-release.
+            -   name: 🚀 Promote to Production
+                uses: kevin-david/promote-play-release@v1.2.0
+                with:
+                    service-account-json-file: ${{ env.SERVICE_ACCOUNT_PATH }} # Ruta al archivo de cuenta de servicio decodificado.
+                    package-name: ${{ env.APP_PACKAGE_NAME }} # Nombre del paquete de la aplicación Android.
+                    from-track: 'beta' # La pista de origen desde la cual se promoverá la aplicación (puede ser 'internal', 'alpha', 'beta' o 'production').
+                    to-track: 'production' # La pista de destino a la cual se promoverá la aplicación.
+                    user-fraction: 0.9 # (Opcional) Fracción de usuarios a los que se les distribuirá la actualización en producción (entre 0 y 1).
+
+    # Este job se encarga de promover la aplicación iOS a producción en App Store
+    # utilizando Fastlane.
+    promote-ios:
+        name: "📈 Promote iOS to App Store (Simulated)"
+        needs: quality # Este job depende del job de calidad, asegurando que solo se promueva a producción si se pasan las verificaciones de calidad.
+        runs-on: macos-latest
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+
+            # Este paso configura Ruby en el runner.
+            -   name: 💎 Setup Ruby
+                uses: ruby/setup-ruby@v1
+                with:
+                    ruby-version: '3.2'
+                    bundler-cache: true
+
+            # Este paso instala las gemas de Ruby necesarias para el proyecto iOS.
+            -   name: 💎 Install Ruby gems
+                run: |
+                    cd ios
+                    bundle install
+
+            # Este paso obtiene la versión de la aplicación desde el archivo pubspec.yaml
+            # para usarla en la promoción a App Store.
+            -   name: 📋 Get Version from pubspec
+                id: version
+                run: |
+                    VERSION=$(grep 'version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
+                    echo "version=$VERSION" >> $GITHUB_OUTPUT
+                    echo "::notice::Version to promote: $VERSION"
+            
+            # Este paso promueve la aplicación iOS a producción utilizando Fastlane.
+            -   name: 🚀 Promote iOS to App Store
+                # En este paso se ejecuta un comando de Fastlane para promover la aplicación a App Store.
+                run: |
+                    cd ios
+                    bundle exec fastlane promote_to_app_store \
+                    version: ${{ steps.version.outputs.version }} \
+                    build_number: ${{ github.run_number }}

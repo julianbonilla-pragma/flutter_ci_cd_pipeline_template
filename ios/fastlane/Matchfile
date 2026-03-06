@@ -1,0 +1,17 @@
+# Url de tu repositorio git con SSH que contiene los certificados
+# y perfiles de aprovisionamiento de App Store Connect.
+# Asegúrate de que el repositorio tenga la estructura correcta para Fastlane Match.
+git_url("SSH_GET_REPO_URL")
+
+# Si usas un repositorio privado, puedes configurar las credenciales de acceso
+storage_mode("git")
+
+# El tipo de certificados que quieres gestionar.
+# En este caso, se usarán certificados de desarrollo.
+# También puedes usar "appstore" para certificados de distribución,
+# "adhoc" para certificados de Ad Hoc, o "enterprise" para certificados de empresa.
+type("appstore")
+
+# Para ver todas las opciones disponibles, ejecuta `fastlane match --help`
+
+# La documentación está disponible en https://docs.fastlane.tools/actions/match

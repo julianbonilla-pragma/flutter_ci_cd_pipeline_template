@@ -1,0 +1,161 @@
+# Este archivo se genera automáticamente al ejecutar `fastlane init`
+# en la carpeta ios de tu proyecto Flutter.
+# Contiene las lanes de Fastlane para automatizar tareas como la gestión de certificados,
+# la construcción de la app, y la subida a TestFlight o App Store.
+
+default_platform(:ios) # Se define la plataforma por defecto, en este caso iOS
+
+platform :ios do
+    before_all do
+        setup_ci if ENV['CI'] # Configura el entorno para CI, por ejemplo, deshabilitando interacciones o configurando variables de entorno
+    end
+
+    # Esta lane se encarga de sincronizar los certificados
+    #y perfiles de aprovisionamiento usando Fastlane Match.
+    # Es útil para asegurarse de que el entorno de CI tenga
+    # acceso a los certificados necesarios para firmar la app.
+    desc "Sync certificates and provisioning profiles using Fastlane Match"
+    lane :sync_signing do
+        api_key = app_store_connect_api_key(
+            key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"], # Reemplaza con el ID de la API Key de App Store Connect
+            issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"], # Reemplaza con el Issuer ID de App Store Connect
+            key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"], # Reemplaza con el contenido de la API Key (puede ser el contenido del archivo .p8 o la variable de entorno que lo contenga)
+            in_house: false # Cambia a true si estás usando un programa de empresa (Enterprise)
+        )
+
+        match(
+            type: "appstore", # o "development" dependiendo del tipo de certificados que quieras usar
+            app_identifier: "com.example.app", # Reemplaza con el bundle identifier de tu app
+            api_key: api_key, # Usa la API Key para autenticar con App Store Connect en lugar de usuario y contraseña
+            readonly: ENV["CI"] ? true : false # En CI, es recomendable usar readonly para evitar que Match intente crear o modificar certificados si no tiene permisos
+        )
+    end
+
+    # Esta lane se encarga de construir el archivo IPA firmado
+    # para su distribución en App Store o TestFlight.
+    desc "Build and sign IPA for App Store / TestFlight"
+    lane :build do |options|
+        # Si se pasan opciones de versión o build, se actualizan
+        # en el proyecto Xcode antes de construir.
+        if options[:version_name]
+            increment_version_number(
+                version_number: options[:version_name],
+                xcodeproj: "Runner.xcodeproj"
+            )
+        end
+
+        # Si se pasa un número de build específico, se usa ese.
+        # De lo contrario, se incrementa automáticamente.
+        if options[:build_number]
+            increment_build_number(
+                build_number: options[:build_number],
+                xcodeproj: "Runner.xcodeproj"
+            )
+        else
+            # Incrementa el número de build en el proyecto Xcode
+            increment_build_number(
+                xcodeproj: "Runner.xcodeproj"
+            )
+        end
+
+        # Construye el archivo IPA usando Gym, asegurándose de usar
+        # el esquema y workspace correctos, y configurando las opciones
+        # de exportación para App Store.
+        gym(
+            scheme: "production", # Reemplaza con el nombre del esquema que usas para producción
+            workspace: "Runner.xcworkspace", # Reemplaza con el nombre de tu workspace si es diferente
+            export_method: "app-store", # Método de exportación para App Store
+            output_directory: "build/ios/ipa", # Directorio donde se guardará el IPA generado
+            output_name: "example_app.ipa", # Nombre del archivo IPA generado
+            # Opciones de exportación específicas para App Store
+            export_options: {
+                # Configura el provisioning profile para el bundle identifier de tu app
+                provisioningProfiles: {
+                    "com.pmorales.omni.remote" => "match AppStore com.pmorales.omni.remote"
+                },
+                # Configura las opciones de subida a App Store Connect
+                uploadBitcode: false,
+                uploadSymbols: true,
+                compileBitcode: false
+            }
+        )
+    end
+
+    # Esta lane se encarga de subir el archivo IPA generado a TestFlight
+    # usando la acción Pilot de Fastlane. Se puede configurar para que
+    # no espere a que Apple procese el build, y para que no notifique a
+    # los testers externos automáticamente.
+    desc "Upload existing IPA to TestFlight"
+    lane :upload_testflight do |options|
+        # Configura la API Key para autenticar con App Store Connect,
+        # usando las variables de entorno definidas en GitHub Actions.
+        api_key = app_store_connect_api_key(
+            key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"], # Reemplaza con el ID de la API Key de App Store Connect
+            issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"], # Reemplaza con el Issuer ID de App Store Connect
+            key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"], # Reemplaza con el contenido de la API Key (puede ser el contenido del archivo .p8 o la variable de entorno que lo contenga)
+        )
+
+        # Si se pasa la ruta del IPA como opción, se usa esa.
+        # De lo contrario, se asume que el IPA generado por la lane
+        # de build está en la ruta por defecto.
+        ipa_path = options[:ipa] || "build/ios/ipa/example_app.ipa"
+
+        # Sube el IPA a TestFlight usando Pilot, configurando las opciones
+        # para que no espere a que Apple procese el build, y para que no
+        # notifique a los testers externos automáticamente.
+        pilot(
+            api_key: api_key, # Usa la API Key para autenticar con App Store Connect en lugar de usuario y contraseña
+            ipa: ipa_path, # Ruta del archivo IPA a subir
+            skip_waiting_for_build_processing: true, # No esperar a que Apple procese el build
+            changelog: "Automated build from GitHub Actions", # Descripción del build para TestFlight
+            distribute_external: false, # No distribuir a testers externos automáticamente
+            notify_external_testers: false # No notificar a los testers externos automáticamente
+        )
+    end
+
+    # Esta lane se encarga de promover un build existente en TestFlight
+    # a App Store, usando la acción deliver de Fastlane.
+    desc "Promote existing TestFlight build to App Store"
+    lane :promote_to_app_store do |options|
+        # Configura la API Key para autenticar con App Store Connect,
+        # usando las variables de entorno definidas en GitHub Actions.
+        api_key = app_store_connect_api_key(
+            key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"], # Reemplaza con el ID de la API Key de App Store Connect
+            issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"], # Reemplaza con el Issuer ID de App Store Connect
+            key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"], # Reemplaza con el contenido de la API Key (puede ser el contenido del archivo .p8 o la variable de entorno que lo contenga)
+        )
+
+        app_identifier = "com.example.app"      # Reemplaza con el bundle identifier de tu app
+        version        = options[:version]      # Número de versión, ej: "1.0.0"
+        build_number   = options[:build_number] # Número de build, ej: "42"
+
+        # Si no se pasa build_number, se puede tomar el último de TestFlight
+        # de la siguiente manera:
+        if build_number.nil?
+            build_number = latest_testflight_build_number(
+                app_identifier: app_identifier,
+                version: version,
+                api_key: api_key
+            )
+        end
+
+        # Promueve el build a App Store usando la acción deliver, configurando
+        # las opciones para que se envíe a revisión automáticamente, y que se
+        # publique automáticamente cuando Apple lo apruebe. También se puede
+        # añadir la metada necesaria para vista en tienda.
+        deliver(
+            api_key: api_key,               # Usa la API Key para autenticar con App Store Connect en lugar de usuario y contraseña
+            app_identifier: app_identifier, # Bundle identifier de la app
+            force: true,                    # no pedir confirmación interactiva
+            submit_for_review: true,        # envía a revisión
+            automatic_release: true,        # cuando Apple lo apruebe, se publique automáticamente
+            build_number: build_number,     # Número de build a promover, si no se pasa se toma el último de TestFlight
+            # Metadatos para la vista en tienda, como el título, descripción, y notas de la versión.
+            release_notes: {
+                "es-ES" => "Novedades de la versión #{version}",
+                "en-US" => "What’s new in version #{version}"
+            }
+            # Aquí se pueden añadir más metadatos si hiciera falta
+        )
+    end
+end

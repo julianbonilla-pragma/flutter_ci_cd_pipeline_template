@@ -1,0 +1,7 @@
+# Este archivo se genera automáticamente al ejecutar `fastlane init`
+# en la carpeta ios de tu proyecto Flutter.
+# Contiene las dependencias necesarias para usar Fastlane en iOS.
+
+source "https://rubygems.org"
+
+gem "fastlane"

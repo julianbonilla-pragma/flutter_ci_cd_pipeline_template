@@ -1,0 +1,12 @@
+# Acá se agrega el bundle identifier de la app, que se encuentra en el proyecto Xcode
+app_identifier("com.example.app")
+
+# Acá se agrega el Apple ID, que es el correo electrónico
+# asociado a la cuenta de desarrollador de Apple
+apple_id("conocimiento.mobile@pragma.co")
+
+# Acá se agrega el Team ID, que se encuentra en App Store Connect
+itc_team_id("126553916")
+
+# Para más información sobre el Appfile, ver la documentación oficial:
+#     https://docs.fastlane.tools/advanced/#appfile

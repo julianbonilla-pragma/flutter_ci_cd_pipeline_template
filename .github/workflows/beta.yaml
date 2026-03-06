@@ -1,0 +1,357 @@
+# Este workflow se activa en los push a la rama `dev` y
+# es responsable de construir y desplegar la aplicación
+#en la pista de prueba abierta en Play Store y TestFlight para iOS.
+name: Open Test
+
+# Este workflow se ejecuta de forma concurrente en la rama `dev`,
+# cancelando cualquier ejecución en progreso si se activa
+# una nueva ejecución para la misma rama.
+concurrency:
+    group: dev-$-$
+    cancel-in-progress: true
+
+# El workflow se activa en los push a la rama `dev`.
+on:
+    push:
+        branches:
+            - dev
+
+# Definición de los trabajos del workflow.
+jobs:
+    # Este job se encarga de validar la semántica del commit y PR
+    # con el workflow de semantic pull request de Very Good Workflows.
+    semantic-pull-request:
+        name: "📝 Semantic"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
+        permissions:
+            contents: read
+
+    # Este job se encarga de realizar una revisión ortográfica en los
+    # archivos Markdown del proyecto.
+    spell-check:
+        name: "🔍 Spell Check"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
+        with:
+            includes: |
+                **/*.md
+            modified_files_only: false
+
+    # Este job se encarga de verificar la calidad del código,
+    # incluyendo formato, análisis estático, pruebas y cobertura.
+    quality:
+        name: "💯 Verify Quality Gates"
+        needs: [semantic-pull-request, spell-check] # Este job depende de los jobs de validación semántica y revisión ortográfica.
+        runs-on: ubuntu-latest # El job se ejecuta en un runner con Ubuntu.
+        permissions:
+            contents: read # El job solo necesita permisos de lectura para el contenido del repositorio.
+        # Estos son los pasos que se ejecutan en el job de calidad:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+            
+            # Este paso configura Flutter en el runner.
+            -   name: 🐦 Setup Flutter
+                uses: subosito/flutter-action@v2
+                with:
+                    channel: "stable"
+            
+            # Este paso instala las dependencias de Flutter.
+            -   name: 📦 Install Dependencies
+                run: |
+                    flutter pub get
+            
+            # Este paso verifica el formato del código.
+            -   name: ✨ Format Check
+                run: |
+                    dart format --set-exit-if-changed .
+            
+            # Este paso realiza el análisis estático del código.
+            -   name: 🧐 Analyze
+                run: |
+                    flutter analyze
+            
+            # Este paso ejecuta las pruebas unitarias y genera un reporte de cobertura.
+            -   name: 🧪 Run Tests
+                run: |
+                    flutter test --coverage
+            
+            # Este paso verifica que la cobertura de pruebas cumpla con el umbral mínimo.
+            -   name: ✅ Check Coverage
+                uses: VeryGoodOpenSource/very_good_coverage@v3
+                with:
+                    path: coverage/lcov.info
+                    min_coverage: 80
+            
+            # Este paso genera un badge de cobertura de Codecov.
+            -   name: 📊 Codecov Badge
+                uses: codecov/codecov-action@v5
+                with:
+                    token: ${{ secrets.CODECOV_TOKEN }}
+
+    # Este job se encarga de construir el archivo AAB para Android.
+    build-android:
+        name: "🔨 Build Android AAB"
+        needs: quality # Este job depende del job de calidad, asegurando que solo se construya si el código pasa las verificaciones de calidad.
+        runs-on: ubuntu-latest
+        # Estas son las variables de entorno necesarias para la construcción y despliegue de la aplicación Android.
+        env:
+            APP_PACKAGE_NAME: com.example.com # El nombre del paquete de la aplicación Android.
+            AAB_PATH: build/app/outputs/bundle/productionRelease/app-production-release.aab # La ruta del archivo AAB generado.
+            KEYSTORE_PATH: android/keystore.jks # La ruta del keystore de Android.
+            KEY_PROPS_PATH: android/key.properties # La ruta del archivo de propiedades de la clave.
+            SERVICE_ACCOUNT_PATH: service-account.json # La ruta del archivo de la cuenta de servicio.
+        # Estos son los pasos que se ejecutan en el job de construcción de Android:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+            
+            # Este paso configura Flutter en el runner.
+            -   name: 🐦 Setup Flutter
+                uses: subosito/flutter-action@v2
+                with:
+                    channel: "stable"
+            
+            # Este paso decodifica el keystore de Android desde un secreto codificado en base64.
+            -   name: 🔑 Decode Android Keystore
+                run: echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > ${{ env.KEYSTORE_PATH }}
+            
+            # Este paso decodifica el archivo de propiedades de la clave desde un secreto codificado en base64.
+            -   name: 🔑 Decode Android Key Properties
+                run: echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" | base64 --decode > ${{ env.KEY_PROPS_PATH }}
+            
+            # Este paso decodifica el archivo de la cuenta de servicio desde un secreto codificado en base64.
+            -   name: 🔑 Decode Service Account
+                run: echo "${{ secrets.ANDROID_RELEASE_SERVICE_ACCOUNT }}" | base64 --decode > ${{ env.SERVICE_ACCOUNT_PATH }}
+
+            # Este paso instala las dependencias de Flutter.
+            -   name: 📦 Install Dependencies
+                run: |
+                    flutter pub get
+            
+            # Este paso construye el archivo AAB para Android utilizando
+            # el flavor de producción y estableciendo el número de versión y build.
+            # Cambia `TU_FLAVOR` por el nombre del flavor que estés utilizando para
+            # producción, si es que usas flavors. Y asegúrate de que el número de
+            # build se incremente automáticamente con cada ejecución para evitar conflictos en Play Store.
+            -   name: 🛠️ Build the application (AAB)
+                run: |
+                    flutter build appbundle --flavor TU_FLAVOR -t lib/main.dart --build-number="${{ github.run_number }}"
+
+            # Este paso sube el archivo AAB generado como un artefacto del workflow
+            # para que pueda ser utilizado en pasos posteriores, como el despliegue a Play Store.
+            -   name: ⬇️ Upload AAB to Artifacts
+                uses: actions/upload-artifact@master
+                with:
+                    name: aab-stores
+                    path: ${{ env.AAB_PATH }}
+
+    # Este job se encarga de promover la aplicación Android a producción en Play Store.
+    deploy-android:
+        name: "🚀 Deploy Android to Play Store (Open Test)"
+        runs-on: ubuntu-latest
+        needs: build-android # Este job depende del job de construcción de Android, asegurando que solo se despliegue si la construcción fue exitosa.
+        # Estas son las variables de entorno necesarias para el despliegue de la aplicación Android.
+        env:
+            APP_PACKAGE_NAME: com.example.com # El nombre del paquete de la aplicación Android.
+            AAB_PATH: build/app/outputs/bundle/productionRelease/app-production-release.aab # La ruta del archivo AAB generado.
+            SERVICE_ACCOUNT_PATH: service-account.json # La ruta del archivo de la cuenta de servicio.
+        # Estos son los pasos que se ejecutan en el job de despliegue de Android:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Checkout repo
+                uses: actions/checkout@v6
+            
+            # Este paso descarga el archivo AAB generado en el job de construcción de Android.
+            -   name: ⬇️ Download Artifact
+                uses: actions/download-artifact@master
+                with:
+                    name: aab-stores
+                    path: ./downloaded
+            
+            # Este paso crea la estructura de directorios necesaria para el
+            # archivo AAB y copia el AAB descargado a esa ubicación.
+            -   name: 📁 Crear estructura de directorios
+                run: |
+                    mkdir -p build/app/outputs/bundle/productionRelease/
+                    cp ./downloaded/* build/app/outputs/bundle/productionRelease/
+                    ls -la build/app/outputs/bundle/productionRelease/
+            
+            # Este paso decodifica el archivo de la cuenta de servicio
+            # desde un secreto codificado en base64.
+            -   name: 🔑 Decode Service Account
+                run: echo "${{ secrets.ANDROID_RELEASE_SERVICE_ACCOUNT }}" | base64 --decode > ${{ env.SERVICE_ACCOUNT_PATH }}
+            
+            # Este paso promueve el archivo AAB a producción en
+            # Play Store utilizando la acción de promoción de Play Store.
+            -   name: 🚀 Upload to Play Store
+                uses: r0adkll/upload-google-play@v1
+                with:
+                    serviceAccountJson: ${{ env.SERVICE_ACCOUNT_PATH }} # El archivo JSON de la cuenta de servicio para autenticarse con la API de Google Play.
+                    packageName: ${{ env.APP_PACKAGE_NAME }} # El nombre del paquete de la aplicación Android.
+                    releaseFiles: ${{ env.AAB_PATH }} # La ruta del archivo AAB generado.
+                    track: beta # production, alpha, qa | automotive, wear, tv, android_xr, google_play_games_pc
+                    # Opcional: Ruta a un directorio con archivos de texto para las notas de la versión en
+                    # diferentes idiomas. Cada archivo debe tener el nombre del idioma
+                    # (por ejemplo, "en-US.txt" para inglés de Estados Unidos) y contener las notas de la versión para ese idioma.
+                    whatsNewDirectory: whatsnew
+                    # El porcentaje de usuarios que recibirán la
+                    # actualización inicialmente (entre 0 y 1). Esto permite hacer un
+                    # despliegue gradual y monitorear cualquier problema antes de que
+                    # llegue a todos los usuarios.
+                    userFraction: 0.1
+
+    # Este job se encarga de promover la aplicación iOS a TestFlight.
+    build-ios:
+        name: "🔨 Build iOS IPA"
+        needs: quality
+        runs-on: macos-latest
+        # Estas son las variables de entorno necesarias para la construcción y despliegue de la aplicación iOS.
+        env:
+            # Esta variable de entorno es el ID de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+            # Esta variable de entorno es el UUID del emisor de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+            # Esta variable de entorno contiene el contenido de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+            # Esta variable de entorno es la contraseña utilizada por Match para acceder a los
+            # certificados y perfiles de aprovisionamiento.
+            MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        # Estos son los pasos que se ejecutan en el job de construcción de iOS:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+
+            # Este paso configura Flutter en el runner.
+            -   name: 🐦 Setup Flutter
+                uses: subosito/flutter-action@v2
+                with:
+                    channel: "stable"
+            
+            # Este paso configura Xcode en el runner.
+            -   name: Setup Xcode
+                uses: maxim-lobanov/setup-xcode@v1
+                with:
+                    xcode-version: "16.4"
+            
+            # Este paso configura Ruby en el runner.
+            -   name: 💎 Setup Ruby
+                uses: ruby/setup-ruby@v1
+                with:
+                    ruby-version: '3.2'
+                    bundler-cache: true
+            
+            # Este paso instala las dependencias de Flutter.
+            -   name: 📦 Install Flutter dependencies
+                run: flutter pub get
+
+            # Este paso instala las dependencias de CocoaPods.
+            -   name: 🛠️ Install CocoaPods dependencies
+                run: |
+                    cd ios
+                    pod install
+            
+            # Este paso instala las gemas de Ruby necesarias para el proyecto iOS.
+            -   name: 💎 Install Ruby gems
+                run: |
+                    cd ios
+                    bundle install
+
+            # Este paso configura la clave SSH para que Match pueda acceder
+            # al repositorio de certificados y perfiles de aprovisionamiento.
+            -   name: Set up SSH key for Match
+                run: |
+                    mkdir -p ~/.ssh
+                    echo "${{ secrets.MATCH_GIT_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+                    chmod 600 ~/.ssh/id_rsa
+                    ssh-keyscan github.com >> ~/.ssh/known_hosts
+                    cat > ~/.ssh/config << EOF
+                    Host github.com
+                        HostName github.com
+                        User git
+                        IdentityFile ~/.ssh/id_rsa
+                        IdentitiesOnly yes
+                    EOF
+                    ssh -T git@github.com || true
+
+            # Este paso sincroniza los certificados y perfiles de aprovisionamiento
+            # utilizando Match de Fastlane.
+            -   name: 🔐 Sync code signing with match
+                run: |
+                    cd ios
+                    bundle exec fastlane sync_signing
+            
+            # Este paso lista las identidades de firma disponibles para ayudar a
+            # depurar problemas de firma de código.
+            -   name: 🔍 List signing identities
+                run: |
+                    security find-identity -p codesigning -v ~/Library/Keychains/fastlane_tmp_keychain-db || true
+            
+            # Este paso construye el archivo IPA para iOS utilizando Fastlane.
+            -   name: 🧱 Build IPA
+                run: |
+                    cd ios
+                    bundle exec fastlane build build_number:${{ github.run_number }} version_name:1.3.${{ github.run_number }}
+            
+            # Este paso sube el archivo IPA generado como un artefacto del workflow
+            # para que pueda ser utilizado en pasos posteriores, como el despliegue a TestFlight
+            -   name: ⬆️ Upload IPA Artifact
+                uses: actions/upload-artifact@master
+                with:
+                    name: ios-ipa
+                    path: ios/build/ios/ipa/omni_remote.ipa
+
+    # Este job se encarga de promover la aplicación iOS a producción en App Store.
+    deploy-ios:
+        name: "🚀 Deploy iOS to TestFlight"
+        runs-on: macos-latest
+        needs: build-ios
+        # Estas son las variables de entorno necesarias para el despliegue de la aplicación iOS.
+        env:
+            # Esta variable de entorno es el ID de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+            # Esta variable de entorno es el UUID del emisor de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+            # Esta variable de entorno tiene el contenido de la clave API de App Store Connect,
+            # que se utiliza para autenticar con la API de App Store Connect.
+            APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        # Estos son los pasos que se ejecutan en el job de despliegue de iOS:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+
+            # Este paso configura Ruby en el runner.
+            -   name: 💎 Setup Ruby
+                uses: ruby/setup-ruby@v1
+                with:
+                    ruby-version: '3.2'
+                    bundler-cache: true
+            
+            # Este paso instala las gemas de Ruby necesarias para el proyecto iOS.
+            -   name: 💎 Install Ruby gems
+                run: |
+                    cd ios
+                    bundle install
+
+            # Este paso obtiene la versión de la aplicación desde el archivo
+            # pubspec.yaml y la exporta como una salida del paso para que pueda
+            # ser utilizada en pasos posteriores.
+            -   name: ⬇️ Download IPA Artifact
+                uses: actions/download-artifact@master
+                with:
+                    name: ios-ipa
+                    path: ios/build/ios/ipa
+
+            # Este paso realiza la promoción a TestFlight utilizando Fastlane.
+            -   name: ✈️ Upload to TestFlight
+                run: |
+                    cd ios
+                    bundle exec fastlane upload_testflight

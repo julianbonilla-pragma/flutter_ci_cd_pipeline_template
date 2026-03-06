@@ -1,0 +1,97 @@
+# Este workflow se encarga de ejecutar verificaciones de calidad
+# y análisis semántico en las ramas de características (feature branches)
+# para asegurar que el código cumpla con los estándares antes de ser
+# fusionado a las ramas principales (dev o main).
+name: New Feature
+
+# Este workflow se ejecuta de forma concurrente por rama,
+# cancelando cualquier ejecución en progreso si se activa
+# una nueva ejecución para la misma rama.
+concurrency:
+    group: feature-${{ github.ref }}
+    cancel-in-progress: true
+
+# Este workflow se ejecuta en cada push a ramas que sigan el patrón 'feature/**'
+# o en cada pull request dirigido a las ramas 'dev' o 'main'.
+on:
+    push:
+        branches:
+            - 'feature/**'
+    pull_request:
+        branches:
+            - dev
+            - main
+
+# Definición de los trabajos (jobs) que se ejecutarán en este workflow.
+jobs:
+    # Este job se encarga de validar la semántica del commit y PR
+    # con el workflow de semantic pull request de Very Good Workflows.
+    semantic-pull-request:
+        name: "📝 Semantic"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
+        permissions:
+            contents: read
+
+    # Este job se encarga de realizar una revisión ortográfica en los
+    # archivos Markdown del proyecto.
+    spell-check:
+        name: "🔍 Spell Check"
+        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
+        with:
+            includes: |
+                **/*.md
+            modified_files_only: false
+
+    # Este job se encarga de verificar la calidad del código,
+    # incluyendo formato, análisis estático, pruebas y cobertura.
+    quality:
+        name: "💯 Verify Quality Gates"
+        needs: [semantic-pull-request, spell-check] # Este job depende de los jobs de validación semántica y revisión ortográfica.
+        runs-on: ubuntu-latest # El job se ejecuta en un runner con Ubuntu.
+        permissions:
+            contents: read
+        # Estos son los pasos que se ejecutan en el job de calidad:
+        steps:
+            # Este paso hace checkout del código del repositorio.
+            -   name: 📚 Git Checkout
+                uses: actions/checkout@v6
+            
+            # Este paso configura Flutter en el runner utilizando la acción de subosito/flutter-action.
+            -   name: 🐦 Setup Flutter
+                uses: subosito/flutter-action@v2
+                with:
+                    channel: "stable"
+            
+            # Este paso instala las dependencias del proyecto utilizando Flutter.
+            -   name: 📦 Install Dependencies
+                run: |
+                    flutter pub get
+            
+            # Este paso verifica el formato del código.
+            -   name: ✨ Format Check
+                run: |
+                    dart format --set-exit-if-changed .
+            
+            # Este paso realiza un análisis estático del código utilizando Flutter Analyze.
+            -   name: 🧐 Analyze
+                run: |
+                    flutter analyze
+            
+            # Este paso ejecuta las pruebas del proyecto y genera un reporte de cobertura.
+            -   name: 🧪 Run Tests
+                run: |
+                    flutter test --coverage
+            
+            # Este paso verifica que la cobertura de código cumpla con un umbral mínimo
+            # (80% en este caso) utilizando la acción de Very Good Coverage.
+            -   name: ✅ Check Coverage
+                uses: VeryGoodOpenSource/very_good_coverage@v3
+                with:
+                    path: coverage/lcov.info
+                    min_coverage: 80
+            
+            # Este paso sube el reporte de cobertura a Codecov para su visualización y seguimiento.
+            -   name: 📊 Codecov Badge
+                uses: codecov/codecov-action@v5
+                with:
+                    token: ${{ secrets.CODECOV_TOKEN }}
