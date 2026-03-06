@@ -39,6 +39,8 @@ Codificación: `base64 -i ruta/al/archivo | pbcopy`
 - APP_STORE_CONNECT_ISSUER_ID: Issuer ID de la cuenta.
 - APP_STORE_CONNECT_API_KEY_CONTENT: contenido completo del archivo .p8 (sin base64).
 
+Nota: Para capturar el contenido del archivo .p8 se ejecuta `pbcopy < AuthKey_XXXXXXX.p8`
+
 ### 2.4 iOS / Fastlane Match
 
 - MATCH_PASSWORD: contraseña usada por Match para cifrar certificados.
