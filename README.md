@@ -70,7 +70,7 @@ Desencadenante: push a la rama dev.
 
 - Job quality: valida formato, análisis, pruebas y cobertura mínima.
 - Job build-android: decodifica los secrets de Android, instala dependencias y ejecuta `flutter build appbundle`.
-- Job deploy-android: descarga el .aab y lo sube a la pista beta (prueba abierta) en Google Play usando r0adkll/upload-google-play.
+- Job deploy-android: descarga el .aab y lo sube a la pista beta (prueba abierta) en Google Play usando r0adkll/upload-google-play. Los **release notes** de cada versión se leen desde la carpeta raíz `whatsnew` (por ejemplo, archivos `whatsnew/whatsnew-en-US`, etc.).
 
 ### 3.3 Flujo de producción (Google Play Store)
 

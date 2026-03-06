@@ -123,7 +123,7 @@ jobs:
     # Este job se encarga de promover la aplicación iOS a producción en App Store
     # utilizando Fastlane.
     promote-ios:
-        name: "📈 Promote iOS to App Store (Simulated)"
+        name: "📈 Promote iOS to App Store"
         needs: quality # Este job depende del job de calidad, asegurando que solo se promueva a producción si se pasan las verificaciones de calidad.
         runs-on: macos-latest
         steps:
