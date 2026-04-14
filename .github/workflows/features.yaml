@@ -4,19 +4,19 @@
 # fusionado a las ramas principales (dev o main).
 name: New Feature
 
-# Este workflow se ejecuta de forma concurrente por rama,
+# Este workflow se ejecuta de forma concurrente por rama y workflow,
 # cancelando cualquier ejecución en progreso si se activa
-# una nueva ejecución para la misma rama.
+# una nueva ejecución para la misma rama y el mismo workflow.
 concurrency:
-    group: feature-${{ github.ref }}
+    group: feature-${{ github.ref }}-${{ github.workflow }}
     cancel-in-progress: true
 
-# Este workflow se ejecuta en cada push a ramas que sigan el patrón 'feature/**'
-# o en cada pull request dirigido a las ramas 'dev' o 'main'.
+# Este workflow se ejecuta en cada push a ramas que sigan el patrón "feature/**"
+# o en cada pull request dirigido a las ramas "dev" o "main".
 on:
     push:
         branches:
-            - 'feature/**'
+            - "feature/**"
     pull_request:
         branches:
             - dev

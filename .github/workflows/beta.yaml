@@ -5,9 +5,9 @@ name: Open Test
 
 # Este workflow se ejecuta de forma concurrente en la rama `dev`,
 # cancelando cualquier ejecución en progreso si se activa
-# una nueva ejecución para la misma rama.
+# una nueva ejecución para la misma rama y el mismo workflow.
 concurrency:
-    group: dev-$-$
+    group: dev-${{ github.ref }}-${{ github.workflow }}
     cancel-in-progress: true
 
 # El workflow se activa en los push a la rama `dev`.
@@ -18,14 +18,6 @@ on:
 
 # Definición de los trabajos del workflow.
 jobs:
-    # Este job se encarga de validar la semántica del commit y PR
-    # con el workflow de semantic pull request de Very Good Workflows.
-    semantic-pull-request:
-        name: "📝 Semantic"
-        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
-        permissions:
-            contents: read
-
     # Este job se encarga de realizar una revisión ortográfica en los
     # archivos Markdown del proyecto.
     spell-check:
@@ -40,7 +32,7 @@ jobs:
     # incluyendo formato, análisis estático, pruebas y cobertura.
     quality:
         name: "💯 Verify Quality Gates"
-        needs: [semantic-pull-request, spell-check] # Este job depende de los jobs de validación semántica y revisión ortográfica.
+        needs: [spell-check] # Este job depende del job de revisión ortográfica.
         runs-on: ubuntu-latest # El job se ejecuta en un runner con Ubuntu.
         permissions:
             contents: read # El job solo necesita permisos de lectura para el contenido del repositorio.
@@ -142,7 +134,7 @@ jobs:
             # Este paso sube el archivo AAB generado como un artefacto del workflow
             # para que pueda ser utilizado en pasos posteriores, como el despliegue a Play Store.
             -   name: ⬇️ Upload AAB to Artifacts
-                uses: actions/upload-artifact@master
+                uses: actions/upload-artifact@v7
                 with:
                     name: aab-stores
                     path: ${{ env.AAB_PATH }}
@@ -165,7 +157,7 @@ jobs:
             
             # Este paso descarga el archivo AAB generado en el job de construcción de Android.
             -   name: ⬇️ Download Artifact
-                uses: actions/download-artifact@master
+                uses: actions/download-artifact@v8
                 with:
                     name: aab-stores
                     path: ./downloaded
@@ -237,13 +229,13 @@ jobs:
             -   name: Setup Xcode
                 uses: maxim-lobanov/setup-xcode@v1
                 with:
-                    xcode-version: "16.4"
+                    xcode-version: "latest-stable"
             
             # Este paso configura Ruby en el runner.
             -   name: 💎 Setup Ruby
                 uses: ruby/setup-ruby@v1
                 with:
-                    ruby-version: '3.2'
+                    ruby-version: "3.2"
                     bundler-cache: true
             
             # Este paso instala las dependencias de Flutter.
@@ -301,7 +293,7 @@ jobs:
             # Este paso sube el archivo IPA generado como un artefacto del workflow
             # para que pueda ser utilizado en pasos posteriores, como el despliegue a TestFlight
             -   name: ⬆️ Upload IPA Artifact
-                uses: actions/upload-artifact@master
+                uses: actions/upload-artifact@v7
                 with:
                     name: ios-ipa
                     path: ios/build/ios/ipa/omni_remote.ipa
@@ -332,7 +324,7 @@ jobs:
             -   name: 💎 Setup Ruby
                 uses: ruby/setup-ruby@v1
                 with:
-                    ruby-version: '3.2'
+                    ruby-version: "3.2"
                     bundler-cache: true
             
             # Este paso instala las gemas de Ruby necesarias para el proyecto iOS.
@@ -345,7 +337,7 @@ jobs:
             # pubspec.yaml y la exporta como una salida del paso para que pueda
             # ser utilizada en pasos posteriores.
             -   name: ⬇️ Download IPA Artifact
-                uses: actions/download-artifact@master
+                uses: actions/download-artifact@v8
                 with:
                     name: ios-ipa
                     path: ios/build/ios/ipa

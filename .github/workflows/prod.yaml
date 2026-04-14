@@ -4,9 +4,9 @@ name: Production
 
 # Este workflow se ejecuta de forma concurrente en la rama `main`,
 # cancelando cualquier ejecución en progreso si se activa
-# una nueva ejecución para la misma rama.
+# una nueva ejecución para la misma rama y el mismo workflow.
 concurrency:
-    group: main-$-$
+    group: main-${{ github.ref }}-${{ github.workflow }}
     cancel-in-progress: true
 
 # El workflow se activa en los push a la rama `main`.
@@ -17,14 +17,6 @@ on:
 
 # Definición de los trabajos del workflow.
 jobs:
-    # Este job se encarga de validar la semántica del commit y PR
-    # con el workflow de semantic pull request de Very Good Workflows.
-    semantic-pull-request:
-        name: "📝 Semantic"
-        uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
-        permissions:
-            contents: read
-
     # Este job se encarga de realizar una revisión ortográfica en los
     # archivos Markdown del proyecto.
     spell-check:
@@ -39,7 +31,7 @@ jobs:
     # incluyendo formato, análisis estático, pruebas y cobertura.
     quality:
         name: "💯 Verify Quality Gates"
-        needs: [semantic-pull-request, spell-check] # Este job depende de los jobs de validación semántica y revisión ortográfica.
+        needs: [spell-check] # Este job depende del job de revisión ortográfica.
         runs-on: ubuntu-latest # El job se ejecuta en un runner con Ubuntu.
         permissions:
             contents: read
